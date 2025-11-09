@@ -38,7 +38,7 @@ and then when trying to find the data I found the map on https://netmigration.wi
 
 ### Data Source 1: Net Migration Patterns 
 
-URL: [{URL}](https://netmigration.wisc.edu/)
+URL: https://netmigration.wisc.edu/
 
 Size: 3174 rows per decade i.e. 3174 x 6, 49 columns
 
