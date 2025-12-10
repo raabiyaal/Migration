@@ -7,7 +7,7 @@ Raabiyaal Ishaq
 This interactive allows users to explore net migration patterns across the 
 United States by geography, demographics, and time period.
 
-![Webpage](pic1.png) 
+![Webpage](documentation/pic1.png) 
 
 ## Link
 
