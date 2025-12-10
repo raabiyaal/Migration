@@ -39,8 +39,8 @@
     <div class="control-group">
       <label class="control-label">Time Period</label>
       <div class="button-group">
-        <button class="btn active" data-decade="1">2011-2020</button>
         <button class="btn" data-decade="0">2001-2010</button>
+        <button class="btn active" data-decade="1">2011-2020</button>
       </div>
     </div>
 
@@ -65,16 +65,24 @@
       <label class="control-label">Age Group</label>
       <select id="age"></select>
     </div>
+
+    <div class="data-source">
+      Data source: <a href="https://netmigration.wisc.edu/" target="_blank" rel="noopener noreferrer">netmigration.wisc.edu</a>
+    </div>
   </div>
 
 
   <div class="main-content">
     <div id="legend">
-      <div class="legend-title">Color Scale</div>
+      <div id="legend-metric" class="legend-subtitle"></div>
     </div>
     
     <div id="map-container">
-      <svg id="map" width="960" height="600"></svg>
+      <div class="map-controls">
+        <button class="zoom-btn" data-zoom="in">+</button>
+        <button class="zoom-btn" data-zoom="out">-</button>
+      </div>
+      <svg id="map" width="100%" height="100%" viewBox="0 0 960 600" preserveAspectRatio="xMidYMid meet"></svg>
     </div>
   </div>
 </div>
@@ -197,6 +205,7 @@ Promise.all([
   const dataMap = new Map(data.map(d => [d.fips, d]));
 
   const svg = d3.select("#map");
+  const mapGroup = svg.append("g").attr("class", "map-layer");
   const tooltip = d3.select("#tooltip");
 
   const states = topojson.feature(usStates, usStates.objects.states).features;
@@ -205,15 +214,42 @@ Promise.all([
   const projection = d3.geoAlbersUsa().scale(1000).translate([480, 300]);
   const path = d3.geoPath().projection(projection);
 
+  const zoom = d3.zoom()
+    .scaleExtent([1, 8])
+    .on("zoom", (event) => {
+      mapGroup.attr("transform", event.transform);
+    });
+
+  svg.call(zoom);
+
+  document.querySelectorAll(".zoom-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const factor = btn.dataset.zoom === "in" ? 1.25 : 0.8;
+      svg.transition().duration(200).call(zoom.scaleBy, factor);
+    });
+  });
+
   
-  function updateLegend(minVal, maxVal) {
+  function metricLabel(metric) {
+    return metric === "r" ? "Migration Rate per 100" : "Total Migration";
+  }
+
+  function metricDescriptor(metric) {
+    return metric === "r"
+      ? "Net Migration Rate (per 100 residents)"
+      : "Net Migration (absolute count)";
+  }
+
+  function updateLegend(minVal, maxVal, descriptor) {
+    const safeMin = Number.isFinite(minVal) ? minVal : 0;
+    const safeMax = Number.isFinite(maxVal) ? maxVal : 0;
     const legend = d3.select("#legend");
     legend.selectAll("canvas, .legend-labels").remove();
 
-    const mid = (minVal + maxVal) / 2;
+    const mid = (safeMin + safeMax) / 2;
 
     const scale = d3.scaleLinear()
-        .domain([minVal, mid, maxVal])
+        .domain([safeMin, mid, safeMax])
         .range(["#a50026", "#ffffbf", "#006837"]);
       //had AI help 
     const w = 280, h = 20;
@@ -226,7 +262,7 @@ Promise.all([
 
     for (let i = 0; i < w; i++) {
       const t = i / (w - 1);
-      const v = minVal + (maxVal - minVal) * t;
+      const v = safeMin + (safeMax - safeMin) * t;
       ctx.fillStyle = scale(v);
       ctx.fillRect(i, 0, 1, h);
     }
@@ -235,9 +271,11 @@ Promise.all([
       .attr("class", "legend-labels")
       .style("width", "280px")
       .html(
-  `<span>${minVal.toLocaleString("en-US", {maximumFractionDigits: 0})}</span>
-   <span>${maxVal.toLocaleString("en-US", {maximumFractionDigits: 0})}</span>`
+  `<span>${safeMin.toLocaleString("en-US", {maximumFractionDigits: 0})}</span>
+   <span>${safeMax.toLocaleString("en-US", {maximumFractionDigits: 0})}</span>`
 );
+
+    d3.select("#legend-metric").text(descriptor);
   }
 
 
@@ -249,6 +287,8 @@ Promise.all([
   window.updateMap = function() {
     const col = buildColumnKey();
     const level = currentState.geoLevel;
+    const descriptor = metricDescriptor(currentState.metric);
+    const tooltipLabel = metricLabel(currentState.metric);
 // had AI help 
     let filteredData;
     if (level === "state") {
@@ -261,15 +301,17 @@ Promise.all([
     const minVal = d3.min(values);
     const maxVal = d3.max(values);
 // had AI help 
+    const safeMin = Number.isFinite(minVal) ? minVal : 0;
+    const safeMax = Number.isFinite(maxVal) ? maxVal : 0;
     const color = d3.scaleDiverging()
-        .domain([minVal, 0, maxVal])
+        .domain([safeMin, 0, safeMax])
         .interpolator(d3.interpolateRdYlGn);
 
-    updateLegend(minVal, maxVal);
+    updateLegend(minVal, maxVal, descriptor);
 
     const geo = (level === "county") ? counties : states;
 
-    svg.selectAll("path")
+    mapGroup.selectAll("path")
       .data(geo)
       .join("path")
       .attr("d", path)
@@ -284,17 +326,17 @@ Promise.all([
       .on("mousemove", function(event, d) {
         const f = String(d.id).padStart(5,"0");
         const row = dataMap.get(f);
-        const v = row ? row[col] : "No data";
-
+        const hasData = row && row[col] !== "";
+        const rawValue = hasData ? row[col] : null;
         const formatted =
-          (!isNaN(v) && v !== "")
-            ? (+v).toLocaleString("en-US")
-            : v;
+          hasData && !isNaN(rawValue)
+            ? (+rawValue).toLocaleString("en-US")
+            : "No data";
 
         tooltip.style("opacity", 1)
           .style("left", event.pageX + 15 + "px")
           .style("top", event.pageY + 15 + "px")
-          .html(`<div style="margin-bottom:4px"><b>${d.properties.name || "County"}</b></div><div><b>Value:</b> ${formatted}</div>`);
+          .html(`<div style="margin-bottom:4px"><b>${d.properties.name || "County"}</b></div><div><b>${tooltipLabel}:</b> ${formatted}</div>`);
       })
       .on("mouseout", () => tooltip.style("opacity", 0));
   }
