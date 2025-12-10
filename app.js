@@ -254,7 +254,7 @@ async function loadData() {
   const [usStates, usCounties, rawData] = await Promise.all([
     d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"),
     d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json"),
-    d3.csv("../data/mydata.csv")  
+    d3.csv("data/mydata.csv")  
   ]);
 
   rawData.forEach(row => row.fips = String(row.fips).padStart(5, "0"));
