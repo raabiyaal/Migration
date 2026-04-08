@@ -105,36 +105,107 @@ const buildColumnKey = () =>
 function renderLegend(minVal, maxVal, descriptor) {
   const safeMin = Number.isFinite(minVal) ? minVal : 0;
   const safeMax = Number.isFinite(maxVal) ? maxVal : 0;
-  const mid = (safeMin + safeMax) / 2;
 
-  legend.selectAll("canvas, .legend-labels").remove();
-
-  const scale = d3.scaleLinear()
-    .domain([safeMin, mid, safeMax])
-    .range(["#a50026", "#ffffbf", "#006837"]);
+  legend.selectAll(".legend-wrapper").remove();
 
   const width = 280;
   const height = 20;
+  const range = safeMax - safeMin || 1;
 
-  const canvas = legend.append("canvas")
+  // Match the same 3-case logic as createColorScale
+  let scale;
+  if (safeMin >= 0) {
+    // All positive — sequential yellow→green
+    scale = d3.scaleLinear()
+      .domain([safeMin, safeMax])
+      .range(["#ffffbf", "#006837"]);
+  } else if (safeMax <= 0) {
+    // All negative — sequential red→yellow
+    scale = d3.scaleLinear()
+      .domain([safeMin, safeMax])
+      .range(["#a50026", "#ffffbf"]);
+  } else {
+    // Spans zero — diverging red→yellow→green, 0 as pivot
+    scale = d3.scaleLinear()
+      .domain([safeMin, 0, safeMax])
+      .range(["#a50026", "#ffffbf", "#006837"]);
+  }
+
+  const zeroFrac = (0 - safeMin) / range;
+  const showZero = safeMin < 0 && safeMax > 0 && zeroFrac > 0.05 && zeroFrac < 0.95;
+
+  const wrapper = legend.append("div")
+    .attr("class", "legend-wrapper")
+    .style("width", `${width}px`);
+
+  // Above bar: "0" label with a tick pointing down to the bar
+  const aboveDiv = wrapper.append("div")
+    .attr("class", "legend-above")
+    .style("position", "relative")
+    .style("height", "22px");
+
+  if (showZero) {
+    const zeroLabel = aboveDiv.append("div")
+      .style("position", "absolute")
+      .style("left", `${zeroFrac * 100}%`)
+      .style("transform", "translateX(-50%)")
+      .style("display", "flex")
+      .style("flex-direction", "column")
+      .style("align-items", "center")
+      .style("font-size", "12px")
+      .style("color", "#718096")
+      .style("font-weight", "500")
+      .style("line-height", "1");
+
+    zeroLabel.append("span").text("0");
+    zeroLabel.append("div")
+      .style("width", "1px")
+      .style("height", "6px")
+      .style("background", "#718096")
+      .style("margin-top", "3px");
+  }
+
+  // Canvas bar
+  const canvas = wrapper.append("canvas")
     .attr("width", width)
     .attr("height", height)
     .node();
 
   const ctx = canvas.getContext("2d");
-
   for (let i = 0; i < width; i++) {
     ctx.fillStyle = scale(safeMin + (safeMax - safeMin) * (i / (width - 1)));
     ctx.fillRect(i, 0, 1, height);
   }
 
-  legend.append("div")
+  // Below bar: min and max labels with ticks pointing up from the bar
+  const belowDiv = wrapper.append("div")
     .attr("class", "legend-labels")
-    .style("width", `${width}px`)
-    .html(`
-      <span>${safeMin.toLocaleString()}</span>
-      <span>${safeMax.toLocaleString()}</span>
-    `);
+    .style("position", "relative")
+    .style("height", "22px");
+
+  const addBelowLabel = (text, side) => {
+    const item = belowDiv.append("div")
+      .style("position", "absolute")
+      .style(side, "0")
+      .style("display", "flex")
+      .style("flex-direction", "column")
+      .style("align-items", "center")
+      .style("font-size", "12px")
+      .style("color", "#718096")
+      .style("font-weight", "500")
+      .style("line-height", "1");
+
+    item.append("div")
+      .style("width", "1px")
+      .style("height", "6px")
+      .style("background", "#718096")
+      .style("margin-bottom", "3px");
+
+    item.append("span").text(text);
+  };
+
+  addBelowLabel(safeMin.toLocaleString(), "left");
+  addBelowLabel(safeMax.toLocaleString(), "right");
 
   d3.select("#legend-metric").text(descriptor);
 }
@@ -148,10 +219,26 @@ const createColorScale = values => {
   const safeMin = Number.isFinite(minVal) ? minVal : 0;
   const safeMax = Number.isFinite(maxVal) ? maxVal : 0;
 
-  return {
-    scale: d3.scaleDiverging()
+  let scale;
+  if (safeMin >= 0) {
+    // All positive — sequential yellow→green
+    scale = d3.scaleSequential()
+      .domain([safeMin, safeMax])
+      .interpolator(d3.interpolateYlGn);
+  } else if (safeMax <= 0) {
+    // All negative — sequential red→yellow
+    scale = d3.scaleSequential()
+      .domain([safeMin, safeMax])
+      .interpolator(t => d3.interpolateRdYlGn(t * 0.5)); // red→yellow half only
+  } else {
+    // Spans zero — diverging, 0 as midpoint
+    scale = d3.scaleDiverging()
       .domain([safeMin, 0, safeMax])
-      .interpolator(d3.interpolateRdYlGn),
+      .interpolator(d3.interpolateRdYlGn);
+  }
+
+  return {
+    scale,
     minVal,
     maxVal
   };
